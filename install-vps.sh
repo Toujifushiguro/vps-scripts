@@ -4,6 +4,9 @@ set -e
 # Скрипт первичной настройки Linux-сервера
 # Запускать от root
 
+# При запуске через pipe (curl | bash) read читает из pipe, а не с клавиатуры — перенаправляем на tty
+[[ ! -t 0 ]] && exec 0</dev/tty
+
 if [[ $EUID -ne 0 ]]; then
    echo "Запустите скрипт от root: sudo $0"
    exit 1
