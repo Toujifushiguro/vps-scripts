@@ -4,14 +4,14 @@
 set -e
 
 if [ "$EUID" -ne 0 ]; then
-    echo "Запустите скрипт с правами root: sudo $0"
+    echo "Run with root: sudo $0"
     exit 1
 fi
 
-# --- Определение IP и интерфейса ---
+# --- Detect IP and interface ---
 MAIN_INTERFACE=$(ip -o route get 1 2>/dev/null | grep -oP 'dev \K\S+' || ip route show default 2>/dev/null | awk '/default/ {print $5}' | head -1)
 if [ -z "$MAIN_INTERFACE" ]; then
-    echo "Не удалось определить основной сетевой интерфейс."
+    echo "Could not detect main network interface."
     exit 1
 fi
 
@@ -20,17 +20,17 @@ if [ -z "$SERVER_IP" ]; then
     SERVER_IP=$(ip -o route get 1 2>/dev/null | grep -oP 'src \K\S+')
 fi
 if [ -z "$SERVER_IP" ]; then
-    echo "Не удалось определить IP-адрес сервера."
+    echo "Could not detect server IP address."
     exit 1
 fi
 
-echo "Интерфейс: $MAIN_INTERFACE, IP: $SERVER_IP"
+echo "Interface: $MAIN_INTERFACE, IP: $SERVER_IP"
 
-# --- Порт SSH (не трогать) ---
+# --- SSH port (do not change) ---
 SSH_PORT=$(grep -E '^Port[[:space:]]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' || echo "22")
 [ -z "$SSH_PORT" ] && SSH_PORT=22
 
-# --- Случайный свободный порт для VPN (10000–65535, не SSH и не занятый) ---
+# --- Random free port for VPN (10000-65535) ---
 port_in_use() {
     local p="$1"
     ss -ulnp 2>/dev/null | grep -q ":$p " && return 0
@@ -46,20 +46,20 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
     break
 done
 if [ -z "$LISTEN_PORT" ]; then
-    echo "Не удалось подобрать свободный порт для VPN."
+    echo "Could not find a free port for VPN."
     exit 1
 fi
-echo "Порт VPN (UDP): $LISTEN_PORT (SSH исключён: $SSH_PORT)"
+echo "VPN port (UDP): $LISTEN_PORT (SSH excluded: $SSH_PORT)"
 
-# --- Параметры VPN ---
+# --- VPN parameters ---
 VPN_SUBNET="10.8.1.0/24"
 VPN_SERVER_IP="10.8.1.1"
 CONF_DIR="/etc/amnezia/amneziawg"
 KEYS_DIR="$CONF_DIR/keys"
 
-# --- Установка AmneziaWG ---
+# --- Install AmneziaWG ---
 if ! command -v awg &>/dev/null; then
-    echo "Установка AmneziaWG..."
+    echo "Installing AmneziaWG..."
     apt-get update -qq
     apt-get install -y software-properties-common
     add-apt-repository -y ppa:amnezia/ppa
@@ -72,7 +72,7 @@ mkdir -p /etc/sysctl.d
 echo "net.ipv4.ip_forward = 1" > /etc/sysctl.d/00-amnezia.conf
 sysctl -p /etc/sysctl.d/00-amnezia.conf
 
-# --- Директории и ключи ---
+# --- Directories and keys ---
 mkdir -p "$KEYS_DIR"
 chmod 700 "$KEYS_DIR"
 
@@ -83,7 +83,7 @@ if [ ! -f "$KEYS_DIR/server_privatekey" ]; then
     chmod 600 "$KEYS_DIR"/*
 fi
 
-# --- Параметры обфускации (ASC) ---
+# --- Obfuscation parameters (ASC) ---
 JC=$((4 + RANDOM % 9))
 JMIN=8
 JMAX=$((JMIN + 50 + RANDOM % 200))
@@ -98,7 +98,7 @@ SERVER_PRIV=$(tr -d '\n' < "$KEYS_DIR/server_privatekey")
 CLIENT_PUB=$(tr -d '\n' < "$KEYS_DIR/client_publickey")
 PRESHARED=$(tr -d '\n' < "$KEYS_DIR/presharedkey")
 
-# --- Конфиг сервера (с PostUp/PostDown для NAT и фаервола) ---
+# --- Server config (PostUp/PostDown for NAT and firewall) ---
 cat > "$CONF_DIR/awg0.conf" << EOF
 [Interface]
 PrivateKey = $SERVER_PRIV
@@ -122,7 +122,7 @@ PublicKey = $CLIENT_PUB
 AllowedIPs = 10.8.1.2/32
 EOF
 
-# --- Первый клиентский конфиг ---
+# --- First client config ---
 SERVER_PUB=$(tr -d '\n' < "$KEYS_DIR/server_publickey")
 CLIENT_PRIV=$(tr -d '\n' < "$KEYS_DIR/client_privatekey")
 
@@ -150,12 +150,12 @@ AllowedIPs = 0.0.0.0/0
 EOF
 chmod 600 "$CONF_DIR/clients/awg0-client-initial.conf"
 
-# --- Скрипт добавления клиентов ---
+# --- Client generation script ---
 cat > "$CONF_DIR/generate_awg_config.sh" << 'GENSCRIPT'
 #!/bin/bash
 set -e
 if [ "$EUID" -ne 0 ]; then
-    echo "Запуск: sudo $0 [имя_клиента]"
+    echo "Usage: sudo $0 [client_name]"
     exit 1
 fi
 CONF_DIR="/etc/amnezia/amneziawg"
@@ -219,31 +219,30 @@ EOF
 awg-quick down awg0 2>/dev/null || true
 awg-quick up "$SERVER_CONF"
 
-echo "Клиент: $CLIENT_CONF_FILE (IP: $CLIENT_IP)"
-echo "Импортируйте этот файл в приложение AmneziaWG."
+echo "Client: $CLIENT_CONF_FILE (IP: $CLIENT_IP)"
+echo "Import this file into the AmneziaWG app."
 GENSCRIPT
 chmod +x "$CONF_DIR/generate_awg_config.sh"
 
-# --- Отключить UFW, если активен ---
-# UFW несовместим с AmneziaWG при нескольких клиентах за одним NAT:
-# conntrack помечает часть UDP-пакетов как INVALID, а UFW их дропает.
-# Защита сервера обеспечивается правилами iptables в PostUp/PostDown.
+# --- Disable UFW if active ---
+# UFW is incompatible with AmneziaWG for multiple clients behind NAT.
+# Server protection is provided by iptables rules in PostUp/PostDown.
 if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
-    echo "Отключение UFW (несовместим с AmneziaWG)..."
+    echo "Disabling UFW (incompatible with AmneziaWG)..."
     ufw disable 2>/dev/null || true
 fi
 
-# --- Поднять интерфейс и включить автозапуск ---
+# --- Bring up interface and enable autostart ---
 awg-quick down awg0 2>/dev/null || true
 awg-quick up awg0
 systemctl enable awg-quick@awg0
 
-# --- Сохранить iptables при наличии netfilter-persistent ---
+# --- Save iptables if netfilter-persistent is present ---
 if command -v netfilter-persistent &>/dev/null; then
     netfilter-persistent save 2>/dev/null || true
 fi
 
-# --- Установка awg-manager.py в домашнюю папку пользователя ---
+# --- Install awg-manager.py in user home ---
 REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo root)}"
 REAL_HOME=$(eval echo "~$REAL_USER")
 MANAGER_DIR="$REAL_HOME/AmneziaWG"
@@ -253,8 +252,8 @@ cat > "$MANAGER_DIR/awg-manager.py" << 'MANAGERPY'
 #!/usr/bin/env python3
 """
 AmneziaWG Client Manager
-Управление клиентами AmneziaWG: создание, удаление, просмотр, содержимое конфигов.
-Запуск: sudo python3 awg-manager.py
+Manage AmneziaWG clients: create, delete, list, view configs.
+Usage: sudo python3 awg-manager.py
 """
 
 import subprocess
@@ -413,7 +412,7 @@ def action_list():
     peers_live = get_awg_show()
     live_map = {p["pubkey"]: p for p in peers_live}
     if not peers_conf:
-        print(color("  Нет клиентов.", C.DIM))
+        print(color("  No clients.", C.DIM))
         return
     print()
     for i, peer in enumerate(peers_conf, 1):
@@ -447,36 +446,36 @@ def action_list():
                 status = color(f"seen {handshake}", C.YELLOW)
         label = color(name, C.BOLD) if name else color(f"peer-{i}", C.BOLD)
         print(f"  {i}. {label}")
-        print(f"     IP: {color(ip_display, C.CYAN)}  |  Статус: {status}")
+        print(f"     IP: {color(ip_display, C.CYAN)}  |  Status: {status}")
         if endpoint:
             print(f"     Endpoint: {endpoint}")
         if transfer_rx:
-            print(f"     Трафик: {transfer_rx}")
+            print(f"     Transfer: {transfer_rx}")
         print()
 
 
 def action_create():
-    name = input(f"\n  Имя клиента: ").strip()
+    name = input(f"\n  Client name: ").strip()
     if not name:
-        print(color("  Имя не может быть пустым.", C.RED))
+        print(color("  Name cannot be empty.", C.RED))
         return
     name = re.sub(r"[^a-zA-Z0-9_-]", "", name.lower().replace(" ", "_"))
     if not name:
-        print(color("  Имя содержит только недопустимые символы.", C.RED))
+        print(color("  Name contains only invalid characters.", C.RED))
         return
     conf_file = os.path.join(CLIENTS_DIR, f"awg0-client-{name}.conf")
     if os.path.exists(conf_file):
-        print(color(f"  Клиент '{name}' уже существует.", C.RED))
+        print(color(f"  Client '{name}' already exists.", C.RED))
         return
     client_ip = next_free_ip()
     if not client_ip:
-        print(color("  Нет свободных IP в подсети.", C.RED))
+        print(color("  No free IPs in subnet.", C.RED))
         return
     server_pub = get_server_public_key()
     server_ip = get_server_ip()
     sp = get_server_params()
     if not server_pub or not server_ip or not sp.get("ListenPort"):
-        print(color("  Не удалось прочитать серверные параметры.", C.RED))
+        print(color("  Could not read server parameters.", C.RED))
         return
     client_priv = run("awg genkey")
     client_pub = run(f"echo '{client_priv}' | awg pubkey")
@@ -516,19 +515,19 @@ def action_create():
     """)
     with open(SERVER_CONF, "a") as f:
         f.write(peer_block)
-    print(f"\n  Перезапуск {INTERFACE}...")
+    print(f"\n  Restarting {INTERFACE}...")
     run(f"awg-quick down {INTERFACE} 2>/dev/null || true", check=False)
     run(f"awg-quick up {INTERFACE}")
-    print(color(f"\n  Клиент '{name}' создан!", C.GREEN))
+    print(color(f"\n  Client '{name}' created!", C.GREEN))
     print(f"  IP:     {color(client_ip, C.CYAN)}")
-    print(f"  Конфиг: {color(conf_file, C.CYAN)}")
+    print(f"  Config: {color(conf_file, C.CYAN)}")
     print()
 
 
 def action_delete():
     peers = list_peers_from_conf()
     if not peers:
-        print(color("  Нет клиентов для удаления.", C.DIM))
+        print(color("  No clients to delete.", C.DIM))
         return
     print()
     names = []
@@ -541,19 +540,19 @@ def action_delete():
         names.append((name, peer))
         print(f"  {i}. {color(name, C.BOLD)}  ({allowed})")
     print()
-    choice = input("  Номер клиента для удаления (0 = отмена): ").strip()
+    choice = input("  Client number to delete (0 = cancel): ").strip()
     if not choice.isdigit() or int(choice) == 0:
-        print("  Отменено.")
+        print("  Cancelled.")
         return
     idx = int(choice) - 1
     if idx < 0 or idx >= len(names):
-        print(color("  Неверный номер.", C.RED))
+        print(color("  Invalid number.", C.RED))
         return
     name, peer = names[idx]
     pubkey = peer.get("PublicKey", "")
-    confirm = input(f"  Удалить клиента '{color(name, C.BOLD)}'? (y/n): ").strip().lower()
+    confirm = input(f"  Delete client '{color(name, C.BOLD)}'? (y/n): ").strip().lower()
     if confirm != "y":
-        print("  Отменено.")
+        print("  Cancelled.")
         return
     text = read_file(SERVER_CONF)
     lines = text.splitlines()
@@ -587,20 +586,20 @@ def action_delete():
     conf_file = os.path.join(CLIENTS_DIR, f"awg0-client-{name}.conf")
     if os.path.exists(conf_file):
         os.remove(conf_file)
-    print(f"\n  Перезапуск {INTERFACE}...")
+    print(f"\n  Restarting {INTERFACE}...")
     run(f"awg-quick down {INTERFACE} 2>/dev/null || true", check=False)
     run(f"awg-quick up {INTERFACE}")
-    print(color(f"\n  Клиент '{name}' удалён.", C.GREEN))
+    print(color(f"\n  Client '{name}' deleted.", C.GREEN))
     print()
 
 
 def action_show():
     if not os.path.isdir(CLIENTS_DIR):
-        print(color("  Нет клиентских конфигов.", C.DIM))
+        print(color("  No client configs.", C.DIM))
         return
     files = sorted([f for f in os.listdir(CLIENTS_DIR) if f.endswith(".conf")])
     if not files:
-        print(color("  Нет клиентских конфигов.", C.DIM))
+        print(color("  No client configs.", C.DIM))
         return
     print()
     names = []
@@ -610,13 +609,13 @@ def action_show():
         names.append((name, fname))
         print(f"  {i}. {color(name, C.BOLD)}")
     print()
-    choice = input("  Номер конфига (0 = отмена): ").strip()
+    choice = input("  Config number (0 = cancel): ").strip()
     if not choice.isdigit() or int(choice) == 0:
-        print("  Отменено.")
+        print("  Cancelled.")
         return
     idx = int(choice) - 1
     if idx < 0 or idx >= len(names):
-        print(color("  Неверный номер.", C.RED))
+        print(color("  Invalid number.", C.RED))
         return
     name, fname = names[idx]
     path = os.path.join(CLIENTS_DIR, fname)
@@ -629,16 +628,16 @@ def action_show():
 
 def main():
     if os.geteuid() != 0:
-        print(color("Требуются права root. Запустите: sudo python3 awg-manager.py", C.RED))
+        print(color("Root required. Run: sudo python3 awg-manager.py", C.RED))
         sys.exit(1)
     while True:
         print(f"\n{color('  AmneziaWG Manager', C.BOLD)}")
         print(f"  {color('─' * 30, C.DIM)}")
-        print(f"  {color('1', C.CYAN)}. Список клиентов и статус")
-        print(f"  {color('2', C.CYAN)}. Создать клиента")
-        print(f"  {color('3', C.CYAN)}. Удалить клиента")
-        print(f"  {color('4', C.CYAN)}. Показать конфиг клиента")
-        print(f"  {color('0', C.CYAN)}. Выход")
+        print(f"  {color('1', C.CYAN)}. List clients and status")
+        print(f"  {color('2', C.CYAN)}. Create client")
+        print(f"  {color('3', C.CYAN)}. Delete client")
+        print(f"  {color('4', C.CYAN)}. Show client config")
+        print(f"  {color('0', C.CYAN)}. Exit")
         print()
         choice = input("  > ").strip()
         if choice == "1":
@@ -650,10 +649,10 @@ def main():
         elif choice == "4":
             action_show()
         elif choice == "0":
-            print(color("  Выход.", C.DIM))
+            print(color("  Exit.", C.DIM))
             break
         else:
-            print(color("  Неверный выбор.", C.RED))
+            print(color("  Invalid choice.", C.RED))
 
 
 if __name__ == "__main__":
@@ -662,11 +661,11 @@ MANAGERPY
 
 chmod +x "$MANAGER_DIR/awg-manager.py"
 chown -R "$REAL_USER:$REAL_USER" "$MANAGER_DIR"
-echo "Менеджер клиентов: $MANAGER_DIR/awg-manager.py"
+echo "Client manager: $MANAGER_DIR/awg-manager.py"
 
 echo ""
-echo "=== AmneziaWG развёрнут ==="
-echo "Сервер: $SERVER_IP, порт: $LISTEN_PORT, интерфейс: $MAIN_INTERFACE"
-echo "Первый клиент: $CONF_DIR/clients/awg0-client-initial.conf"
-echo "Управление: sudo python3 $MANAGER_DIR/awg-manager.py"
+echo "=== AmneziaWG deployed ==="
+echo "Server: $SERVER_IP, port: $LISTEN_PORT, interface: $MAIN_INTERFACE"
+echo "First client: $CONF_DIR/clients/awg0-client-initial.conf"
+echo "Management: sudo python3 $MANAGER_DIR/awg-manager.py"
 echo ""
