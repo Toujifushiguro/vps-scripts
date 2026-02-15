@@ -10,8 +10,8 @@
 `curl -fsSL https://raw.githubusercontent.com/Toujifushiguro/vps-scripts/main/xray-install.sh -o xray-install.sh && sudo bash xray-install.sh`
 
 **VPS** :
-        Speed 200mb, unlimit, 2.4$ per month 👉 [VPS](https://hip.hosting/code=1f1512fae68adea35341)
-        Speed 25gb, unlimit, 4,94 € per month 👉 [VPS](https://aeza.net/?ref=783756)
+- Speed 200mb, unlimit, 2.4$ per month 👉 [VPS](https://hip.hosting/?code=1f1512fae68adea35341)
+- Speed 25gb, unlimit, 4,94 € per month 👉 [VPS](https://aeza.net/?ref=783756)
 
 
 **Client App for AmneziaWG** :
