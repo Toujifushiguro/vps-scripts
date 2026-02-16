@@ -4,10 +4,10 @@
 `curl -fsSL https://raw.githubusercontent.com/Toujifushiguro/vps-scripts/main/install-vps.sh -o install-vps.sh && sudo bash install-vps.sh`
 
 **AmneziaWG**    (Installation AmneziaWG)
-`Sudo curl -fsSL https://raw.githubusercontent.com/Toujifushiguro/vps-scripts/main/amneziawg-install.sh -o amneziawg-install.sh && sudo bash amneziawg-install.sh`
+`sudo curl -fsSL https://raw.githubusercontent.com/Toujifushiguro/vps-scripts/main/amneziawg-install.sh -o amneziawg-install.sh && sudo bash amneziawg-install.sh`
 
 **X-ray**        (Installation X-ray)
-`Sudo curl -fsSL https://raw.githubusercontent.com/Toujifushiguro/vps-scripts/main/xray-install.sh -o xray-install.sh && sudo bash xray-install.sh`
+`sudo curl -fsSL https://raw.githubusercontent.com/Toujifushiguro/vps-scripts/main/xray-install.sh -o xray-install.sh && sudo bash xray-install.sh`
 
 **VPS** :
 - Speed 200mb, unlimit, 2.4$ per month 👉 [VPS](https://hip.hosting/?code=1f1512fae68adea35341)
